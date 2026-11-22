@@ -7,9 +7,6 @@ CREATE TYPE "CandidateStatus" AS ENUM ('INVITED', 'IN_PROGRESS', 'COMPLETED', 'E
 -- CreateEnum
 CREATE TYPE "InterviewStatus" AS ENUM ('PENDING', 'STARTED', 'COMPLETED', 'EXPIRED');
 
--- CreateEnum
-CREATE TYPE "MessageRole" AS ENUM ('USER', 'ASSISTANT');
-
 -- CreateTable
 CREATE TABLE "User" (
     "id" TEXT NOT NULL,
@@ -94,27 +91,6 @@ CREATE TABLE "InterviewReport" (
     CONSTRAINT "InterviewReport_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "CopilotConversation" (
-    "id" TEXT NOT NULL,
-    "jobId" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "CopilotConversation_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "CopilotMessage" (
-    "id" TEXT NOT NULL,
-    "conversationId" TEXT NOT NULL,
-    "role" "MessageRole" NOT NULL,
-    "content" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "CopilotMessage_pkey" PRIMARY KEY ("id")
-);
-
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -148,12 +124,6 @@ CREATE INDEX "Interview_status_expiresAt_idx" ON "Interview"("status", "expiresA
 -- CreateIndex
 CREATE UNIQUE INDEX "InterviewReport_interviewId_key" ON "InterviewReport"("interviewId");
 
--- CreateIndex
-CREATE UNIQUE INDEX "CopilotConversation_jobId_key" ON "CopilotConversation"("jobId");
-
--- CreateIndex
-CREATE INDEX "CopilotMessage_conversationId_createdAt_idx" ON "CopilotMessage"("conversationId", "createdAt");
-
 -- AddForeignKey
 ALTER TABLE "Job" ADD CONSTRAINT "Job_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -168,9 +138,3 @@ ALTER TABLE "Interview" ADD CONSTRAINT "Interview_candidateId_fkey" FOREIGN KEY 
 
 -- AddForeignKey
 ALTER TABLE "InterviewReport" ADD CONSTRAINT "InterviewReport_interviewId_fkey" FOREIGN KEY ("interviewId") REFERENCES "Interview"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "CopilotConversation" ADD CONSTRAINT "CopilotConversation_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "CopilotMessage" ADD CONSTRAINT "CopilotMessage_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "CopilotConversation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
