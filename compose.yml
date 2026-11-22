@@ -1,0 +1,71 @@
+name: vettly
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vettly-postgres
+    restart: unless-stopped
+    env_file:
+      - path: ./api/.env
+        required: false
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-vettly_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vettly-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: vettly-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vettly-network
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: vettly-api
+    restart: unless-stopped
+    env_file:
+      - path: ./api/.env
+        required: false
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - vettly-network
+
+volumes:
+  postgres_data:
+    name: vettly_postgres_data
+  redis_data:
+    name: vettly_redis_data
+
+networks:
+  vettly-network:
+    name: vettly-network
+    driver: bridge
