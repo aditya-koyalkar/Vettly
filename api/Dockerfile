@@ -12,6 +12,9 @@ RUN npm install
 # Copy application source code
 COPY . .
 
+# Generate Prisma Client
+RUN npx prisma generate
+
 # Expose NestJS port
 EXPOSE 3000
 
