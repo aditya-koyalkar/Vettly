@@ -6,6 +6,8 @@ import { AuthModule } from './auth/auth.module.js';
 import { JobsModule } from './jobs/jobs.module.js';
 import { QuestionsModule } from './questions/questions.module.js';
 import { AiModule } from './ai/ai.module.js';
+import { CandidatesModule } from './candidates/candidates.module.js';
+import { InterviewsModule } from './interviews/interviews.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 
@@ -21,6 +23,8 @@ import { AppService } from './app.service.js';
     JobsModule,
     QuestionsModule,
     AiModule,
+    CandidatesModule,
+    InterviewsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
