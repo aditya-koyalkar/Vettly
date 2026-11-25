@@ -2,7 +2,7 @@ name: vettly
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: vettly-postgres
     restart: unless-stopped
     env_file:
@@ -11,7 +11,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgvector_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-vettly_db}"]
       interval: 5s
@@ -59,9 +59,25 @@ services:
     networks:
       - vettly-network
 
+  livekit-agent:
+    build:
+      context: ./livekit-agent
+      dockerfile: Dockerfile
+    container_name: vettly-livekit-agent
+    restart: unless-stopped
+    env_file:
+      - path: ./livekit-agent/.env
+        required: false
+    environment:
+      API_SERVICE_URL: http://api:3000
+    depends_on:
+      - api
+    networks:
+      - vettly-network
+
 volumes:
-  postgres_data:
-    name: vettly_postgres_data
+  pgvector_data:
+    name: vettly_pgvector_data
   redis_data:
     name: vettly_redis_data
 

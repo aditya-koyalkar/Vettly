@@ -18,5 +18,5 @@ RUN npx prisma generate
 # Expose NestJS port
 EXPOSE 3000
 
-# Start NestJS in watch mode for development
-CMD ["npm", "run", "start:dev"]
+# Apply migrations (pgvector schema + indexes), then start in watch mode
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:dev"]
