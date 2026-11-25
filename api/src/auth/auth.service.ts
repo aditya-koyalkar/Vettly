@@ -10,9 +10,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RedisService } from '../redis/redis.service.js';
-import { SignUpDto } from './dto/signup.dto.js';
-import { SignInDto } from './dto/signin.dto.js';
-import { RefreshTokenDto } from './dto/refresh-token.dto.js';
+import type { Refresh, SignIn, SignUp } from './auth.schemas.js';
 
 @Injectable()
 export class AuthService {
@@ -42,9 +40,9 @@ export class AuthService {
     return `${this.BLACKLIST_KEY_PREFIX}${jti}`;
   }
 
-  async signUp(dto: SignUpDto) {
+  async signUp(dto: SignUp) {
     const existing = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
+      where: { email: dto.email },
     });
 
     if (existing) {
@@ -56,7 +54,7 @@ export class AuthService {
 
     const user = await this.prisma.user.create({
       data: {
-        email: dto.email.toLowerCase(),
+        email: dto.email,
         password: hashedPassword,
         name: dto.name,
       },
@@ -77,9 +75,9 @@ export class AuthService {
     };
   }
 
-  async signIn(dto: SignInDto) {
+  async signIn(dto: SignIn) {
     const user = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
+      where: { email: dto.email },
     });
 
     if (!user) {
@@ -105,7 +103,7 @@ export class AuthService {
     };
   }
 
-  async refreshTokens(dto: RefreshTokenDto) {
+  async refreshTokens(dto: Refresh) {
     const refreshKey = this.getRefreshKey(dto.refreshToken);
 
     // 1. Fetch user ID via abstract Redis get()
@@ -141,7 +139,7 @@ export class AuthService {
     };
   }
 
-  async signOut(userId: string, jti: string, exp: number, refreshToken?: string) {
+  async signOut(userId: string, jti: string, exp: number | undefined, refreshToken?: string) {
     // 1. Blacklist access token JTI for its remaining duration
     const now = Math.floor(Date.now() / 1000);
     const remainingTtl = exp ? exp - now : 15 * 60;

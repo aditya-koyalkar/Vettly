@@ -1,63 +1,60 @@
-import {
-  Controller,
-  Post,
-  Get,
-  Body,
-  UseGuards,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service.js';
-import { SignUpDto } from './dto/signup.dto.js';
-import { SignInDto } from './dto/signin.dto.js';
-import { RefreshTokenDto } from './dto/refresh-token.dto.js';
-import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
+import {
+  refreshSchema,
+  signInSchema,
+  signOutSchema,
+  signUpSchema,
+  type Refresh,
+  type SignIn,
+  type SignOut,
+  type SignUp,
+} from './auth.schemas.js';
 import { Public } from './decorators/public.decorator.js';
 import { CurrentUser } from './decorators/current-user.decorator.js';
+import type { AuthenticatedUser } from './interfaces/authenticated-user.interface.js';
 
 @Controller('auth')
-@UseGuards(JwtAuthGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('signup')
-  @HttpCode(HttpStatus.CREATED)
-  async signUp(@Body() dto: SignUpDto) {
-    return this.authService.signUp(dto);
+  signUp(@Body({ schema: signUpSchema }) body: SignUp) {
+    return this.authService.signUp(body);
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('signin')
   @HttpCode(HttpStatus.OK)
-  async signIn(@Body() dto: SignInDto) {
-    return this.authService.signIn(dto);
+  signIn(@Body({ schema: signInSchema }) body: SignIn) {
+    return this.authService.signIn(body);
   }
 
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshTokens(dto);
+  refresh(@Body({ schema: refreshSchema }) body: Refresh) {
+    return this.authService.refreshTokens(body);
   }
 
   @Post('signout')
   @HttpCode(HttpStatus.OK)
-  async signOut(
-    @CurrentUser() user: { id: string; jti: string; exp: number },
-    @Body() body?: { refreshToken?: string },
-  ) {
-    return this.authService.signOut(user.id, user.jti, user.exp, body?.refreshToken);
+  signOut(@CurrentUser() user: AuthenticatedUser, @Body({ schema: signOutSchema }) body: SignOut) {
+    return this.authService.signOut(user.id, user.jti, user.exp, body.refreshToken);
   }
 
   @Post('revoke-all')
   @HttpCode(HttpStatus.OK)
-  async revokeAll(@CurrentUser('id') userId: string) {
+  revokeAll(@CurrentUser('id') userId: string) {
     return this.authService.revokeAllSessions(userId);
   }
 
   @Get('me')
-  async getMe(@CurrentUser('id') userId: string) {
+  getMe(@CurrentUser('id') userId: string) {
     return this.authService.getMe(userId);
   }
 }
