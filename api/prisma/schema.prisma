@@ -1,34 +1,15 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
-enum JobStatus {
-  DRAFT
-  PUBLISHED
-  CLOSED
-}
-
-enum CandidateStatus {
-  INVITED
-  IN_PROGRESS
-  COMPLETED
-  EXPIRED
-}
-
-enum InterviewStatus {
-  PENDING
-  STARTED
-  COMPLETED
-  EXPIRED
-}
+// ─── Identity ────────────────────────────────────────────────────────────────
 
 model User {
   id        String   @id @default(uuid())
@@ -38,94 +19,177 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  jobs Job[]
+  documents Document[]
+  sessions  InterviewSession[]
 }
 
-model Job {
-  id           String      @id @default(uuid())
-  jobId        String      @unique
-  title        String
-  description  String      @db.Text
-  requirements Json?
-  experience   String?
-  location     String?
-  status       JobStatus   @default(DRAFT)
+// ─── Documents & RAG ─────────────────────────────────────────────────────────
 
-  userId       String
-  user         User        @relation(fields: [userId], references: [id])
-  questions    Question[]
-  candidates   Candidate[]
-
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  @@index([userId, status])
-  @@index([userId, updatedAt])
+enum DocumentKind {
+  RESUME
+  JOB_DESCRIPTION
 }
 
-model Question {
-  id         String   @id @default(uuid())
-  question   String   @db.Text
-  type       String?
-  difficulty String?
-  evaluation Json?
-  order      Int
-
-  jobId      String
-  job        Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@index([jobId, order])
+enum DocumentStatus {
+  PROCESSING
+  READY
+  FAILED
 }
 
-model Candidate {
-  id        String          @id @default(uuid())
-  name      String?
-  email     String
+model Document {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      DocumentKind
+  title     String
+  fileName  String?
+  mimeType  String?
+  rawText   String         @db.Text
+  status    DocumentStatus @default(PROCESSING)
+  error     String?
+  /// Structured extraction produced by the analyst agents (ResumeProfile | JobProfile).
+  profile   Json?
 
-  jobId     String
-  job       Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  chunks             DocumentChunk[]
+  resumeSessions     InterviewSession[] @relation("SessionResume")
+  jobSessions        InterviewSession[] @relation("SessionJobDescription")
 
-  status    CandidateStatus @default(INVITED)
-  interview Interview?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-
-  @@unique([jobId, email])
-  @@index([jobId, status, createdAt])
+  @@index([userId, kind, createdAt])
 }
 
-model Interview {
-  id          String           @id @default(uuid())
-  candidateId String           @unique
-  candidate   Candidate        @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+/// The HNSW (embedding) and GIN (full-text) indexes are hand-written in the
+/// migration SQL because Prisma cannot express them. Queried via $queryRaw.
+model DocumentChunk {
+  id         String                       @id @default(uuid())
+  documentId String
+  document   Document                     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  chunkIndex Int
+  section    String?
+  content    String                       @db.Text
+  embedding  Unsupported("vector(768)")?
 
-  tokenHash   String           @unique
-  expiresAt   DateTime
-  startedAt   DateTime?
-  completedAt DateTime?
+  createdAt DateTime @default(now())
 
-  status      InterviewStatus  @default(PENDING)
+  @@unique([documentId, chunkIndex])
+  @@index([userId])
+}
 
-  report      InterviewReport?
+// ─── Interview sessions ──────────────────────────────────────────────────────
 
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+enum InterviewType {
+  TECHNICAL
+  BEHAVIORAL
+  SYSTEM_DESIGN
+  MIXED
+}
 
-  @@index([status, expiresAt])
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum SessionStatus {
+  PREPARING
+  READY
+  IN_PROGRESS
+  ANALYZING
+  COMPLETED
+  FAILED
+}
+
+model InterviewSession {
+  id                 String        @id @default(uuid())
+  userId             String
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumeId           String
+  resume             Document      @relation("SessionResume", fields: [resumeId], references: [id], onDelete: Restrict)
+  jobDescriptionId   String
+  jobDescription     Document      @relation("SessionJobDescription", fields: [jobDescriptionId], references: [id], onDelete: Restrict)
+
+  title              String
+  type               InterviewType @default(MIXED)
+  difficulty         Difficulty    @default(MEDIUM)
+  durationMinutes    Int           @default(20)
+  status             SessionStatus @default(PREPARING)
+  error              String?
+
+  /// Output of the fit analyst agent.
+  fitAnalysis        Json?
+  /// Output of the interview planner agent: ordered question plan.
+  plan               Json?
+
+  roomName           String?       @unique
+  startedAt          DateTime?
+  endedAt            DateTime?
+
+  turns              TranscriptTurn[]
+  notes              InterviewNote[]
+  report             InterviewReport?
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+enum SpeakerRole {
+  AGENT
+  CANDIDATE
+}
+
+model TranscriptTurn {
+  id        String           @id @default(uuid())
+  sessionId String
+  session   InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sequence  Int
+  role      SpeakerRole
+  agentName String?
+  content   String           @db.Text
+  /// Seconds since the interview started.
+  offsetSec Float?
+
+  createdAt DateTime @default(now())
+
+  @@unique([sessionId, sequence])
+}
+
+/// Live observations the interviewer agent records through tool calls.
+model InterviewNote {
+  id         String           @id @default(uuid())
+  sessionId  String
+  session    InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionId String?
+  topic      String
+  observation String          @db.Text
+  /// 1-5 signal strength the interviewer assigned in the moment.
+  rating     Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, createdAt])
 }
 
 model InterviewReport {
-  id             String    @id @default(uuid())
-  interviewId    String    @unique
-  interview      Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  id              String           @id @default(uuid())
+  sessionId       String           @unique
+  session         InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  overallScore   Float?
-  recommendation String?
-  analysis       Json
+  overallScore    Float
+  verdict         String
+  summary         String           @db.Text
+  /// [{ key, label, score, rationale }]
+  dimensions      Json
+  /// [{ questionId, question, answerSummary, score, feedback, idealAnswer }]
+  questionReviews Json
+  strengths       Json
+  improvements    Json
+  /// Which model actually produced the report, for traceability.
+  model           String?
 
-  createdAt      DateTime  @default(now())
+  createdAt       DateTime @default(now())
 }

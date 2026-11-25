@@ -1,30 +1,24 @@
+import { Logger, StandardSchemaValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module.js';
+import type { Env } from './config/env.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const config = app.get<ConfigService<Env, true>>(ConfigService);
 
-  // Enable CORS for frontend clients
+  app.setGlobalPrefix('api');
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: config.get('FRONTEND_URL', { infer: true }).split(','),
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
   });
+  app.useGlobalPipes(new StandardSchemaValidationPipe());
+  app.enableShutdownHooks();
 
-  // Enable DTO validation globally
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-
-  const port = process.env.PORT ?? 3000;
+  const port = config.get('PORT', { infer: true });
   await app.listen(port);
-  console.log(`Vettly API service running on http://localhost:${port}`);
+  Logger.log(`Vettly API listening on http://localhost:${port}/api`, 'Bootstrap');
 }
 
 await bootstrap();
