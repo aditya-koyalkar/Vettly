@@ -11,9 +11,10 @@ class Settings(BaseSettings):
 
     agent_name: str = "vettly-interviewer"
 
-    # Vettly API (internal routes)
+    # Vettly API (internal routes). Optional at import time so `download-files`
+    # can run during Docker image builds without secrets; required at worker start.
     api_service_url: str = "http://localhost:3000"
-    api_service_key: str
+    api_service_key: str = ""
 
     # Tier 1: LiveKit Inference (free credits on LiveKit Cloud).
     livekit_stt_model: str = "deepgram/nova-3"
