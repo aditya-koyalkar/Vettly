@@ -1,0 +1,22 @@
+[project]
+name = "vettly-agent"
+version = "0.1.0"
+description = "Vettly voice interviewer: LiveKit agent worker"
+requires-python = ">=3.13"
+dependencies = [
+    "livekit-agents[google,groq]~=1.8.13",
+    "livekit-plugins-noise-cancellation~=0.3.3",
+    "aiohttp>=3.11",
+    "pydantic-settings>=2.16",
+    "python-dotenv>=1.2",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.14", "pyright>=1.1.400"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]
