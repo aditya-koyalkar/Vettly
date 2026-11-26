@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -152,4 +153,6 @@ async def _cancel(task: asyncio.Task[None]) -> None:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] != "download-files" and not settings.api_service_key:
+        raise RuntimeError("API_SERVICE_KEY must be set before starting the worker")
     cli.run_app(server)

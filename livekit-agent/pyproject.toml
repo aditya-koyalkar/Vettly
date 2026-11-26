@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Vettly voice interviewer: LiveKit agent worker"
 requires-python = ">=3.13"
 dependencies = [
-    "livekit-agents[google,groq]~=1.8.13",
+    "livekit-agents[openai,deepgram]~=1.8.13",
     "livekit-plugins-noise-cancellation~=0.3.3",
     "aiohttp>=3.11",
     "pydantic-settings>=2.16",

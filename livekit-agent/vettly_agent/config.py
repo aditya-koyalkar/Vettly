@@ -12,29 +12,41 @@ class Settings(BaseSettings):
     agent_name: str = "vettly-interviewer"
 
     # Vettly API (internal routes). Optional at import time so `download-files`
-    # can run during Docker image builds without secrets; required at worker start.
+    # can run during Docker builds without secrets; required at worker start.
     api_service_url: str = "http://localhost:3000"
     api_service_key: str = ""
 
-    # Tier 1: LiveKit Inference (free credits on LiveKit Cloud).
+    # Tier 1 (STT & TTS primary): Direct Deepgram API
+    deepgram_api_key: str = ""
+    deepgram_stt_model: str = "nova-3"
+    deepgram_stt_language: str = "en-IN"
+    deepgram_tts_model: str = "aura-2-asteria-en"
+
+    # Tier 2 (STT/TTS fallback, LLM primary): LiveKit Inference
     livekit_stt_model: str = "deepgram/nova-3"
-    livekit_stt_fallback_model: str = "assemblyai/universal-streaming"
-    livekit_llm_model: str = "openai/gpt-4.1-mini"
+    livekit_stt_language: str = "en-IN"
+    livekit_stt_fallback_model: str = "assemblyai/assemblyai-stt-3-7-realtime-agent"
+    livekit_llm_model: str = "google/gemma-4-31b-it"
     # "model:voice"
-    livekit_tts_model: str = "cartesia/sonic-3:9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
-    livekit_tts_fallback_model: str = "deepgram/aura-2:athena"
+    livekit_tts_model: str = "deepgram/aura-2:athena"
+    livekit_tts_fallback_model: str = "cartesia/sonic-3:9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
 
-    # Tier 2: Gemini free tier.
-    gemini_api_key: str | None = None
-    gemini_llm_model: str = "gemini-2.5-flash"
+    # Tier 3: OpenRouter fallbacks
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
-    # Tier 3: Groq free tier.
-    groq_api_key: str | None = None
-    groq_llm_model: str = "openai/gpt-oss-120b"
-    groq_llm_fallback_model: str = "llama-3.3-70b-versatile"
-    groq_stt_model: str = "whisper-large-v3-turbo"
-    groq_tts_model: str = "canopylabs/orpheus-v1-english"
-    groq_tts_voice: str = "hannah"
+    openrouter_llm_model: str = "google/gemini-3.8-flash"
+    openrouter_llm_fallback_1: str = "qwen/qwen3.8-flash"
+    openrouter_llm_fallback_2: str = "openai/gpt-5.6-luna"
+
+    openrouter_stt_model: str = "openai/whisper-large-v3-turbo"
+    openrouter_stt_fallback_1: str = "mistralai/voxtral-mini-transcribe-3-0"
+    openrouter_stt_fallback_2: str = "microsoft/mai-transcribe-2"
+
+    # "model:voice"
+    openrouter_tts_model: str = "google/gemini-3.8-flash-lite-tts:Kore"
+    openrouter_tts_fallback_1: str = "mistralai/voxtral-mini-tts-3-0:en_paul_neutral"
+    openrouter_tts_fallback_2: str = "hexgrad/kokoro-82m:af_heart"
 
 
 @lru_cache
