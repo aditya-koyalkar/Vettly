@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Tier 1 (STT & TTS primary): Direct Deepgram API
     deepgram_api_key: str = ""
     deepgram_stt_model: str = "nova-3"
-    deepgram_stt_language: str = "en"
+    deepgram_stt_language: str = "en-IN"
     deepgram_tts_model: str = "aura-2-asteria-en"
 
     # OpenRouter (LLM primary + secondary key rotation)
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # LiveKit Inference (STT/TTS fallbacks after Deepgram; LLM fallback after OpenRouter)
     livekit_stt_model: str = "deepgram/nova-3"
-    livekit_stt_language: str = "en"
+    livekit_stt_language: str = "en-IN"
     livekit_stt_fallback_model: str = "assemblyai/assemblyai-stt-3-7-realtime-agent"
     livekit_llm_model: str = "google/gemma-4-31b-it"
     # "model" or "model:voice"

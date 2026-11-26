@@ -97,9 +97,9 @@ async def entrypoint(ctx: JobContext) -> None:
             # Semantic end-of-turn model: tells "I'm thinking..." pauses apart from
             # finished answers. Cloud model with on-device fallback.
             "turn_detection": inference.TurnDetector(),
-            # Leave enough headroom above VAD (0.55s) + remote STT RTT so trailing
-            # words finalize inside the turn rather than arriving after commit.
-            "endpointing": {"mode": "dynamic", "min_delay": 1.5, "max_delay": 5.0},
+            # Leave enough headroom above VAD (0.55s) + Deepgram (450ms + lookahead)
+            # so trailing words finalize inside the turn rather than arriving after commit.
+            "endpointing": {"mode": "dynamic", "min_delay": 1.6, "max_delay": 5.0},
             # Stop immediately on real user speech (>= 0.5s) and never drop transcripts
             # in an adaptive backchannel gate or auto-resume over the candidate.
             "interruption": {
@@ -171,8 +171,9 @@ async def entrypoint(ctx: JobContext) -> None:
         agent=GreeterAgent(interview),
         room=ctx.room,
         room_options=room_io.RoomOptions(
-            # Browser WebRTC already runs AEC + noise suppression; omit server-side BVC
-            # to avoid double-filtering and clipping soft/short candidate speech.
+            # Match Deepgram/VAD 16kHz directly and disable server-side AGC so it doesn't
+            # fight browser WebRTC AGC or duck softer syllables mid-sentence.
+            audio_input=room_io.AudioInputOptions(sample_rate=16000, auto_gain_control=False),
             close_on_disconnect=True,
         ),
     )

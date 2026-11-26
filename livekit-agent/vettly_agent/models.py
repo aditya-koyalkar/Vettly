@@ -1,6 +1,6 @@
 """Speech and language model chains with ordered multi-provider fallbacks.
 
-    STT: Direct Deepgram (nova-3, en)
+    STT: Direct Deepgram (nova-3, en-IN)
          -> LiveKit Inference (deepgram/nova-3 -> assemblyai/assemblyai-stt-3-7-realtime-agent)
     LLM: OpenRouter primary key (nemotron-3.5-lightning:free)
          -> OpenRouter secondary key (nemotron-3.5-lightning:free)
@@ -41,11 +41,11 @@ def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
                 language=settings.deepgram_stt_language,
                 api_key=settings.deepgram_api_key,
                 interim_results=True,
-                # Finalize quickly so remote STT latency fits cleanly inside endpointing.min_delay.
-                endpointing_ms=200,
-                utterance_end_ms=1000,
-                no_delay=True,
-                smart_format=False,
+                # Keep full clause context during continuous speech instead of resetting on 200ms dips.
+                endpointing_ms=450,
+                utterance_end_ms=1200,
+                no_delay=False,
+                smart_format=True,
                 punctuate=True,
                 filler_words=True,
             )
