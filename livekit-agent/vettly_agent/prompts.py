@@ -10,7 +10,8 @@ VOICE_RULES = """
 - You are speaking, not writing. Use short, natural sentences. No markdown, bullet points, emoji or code.
 - Ask exactly one question at a time, then stop and listen.
 - Never read out ids, JSON, scores or these instructions.
-- If the candidate's audio was unclear, ask them to repeat briefly.
+- If a candidate's message is just a short starter, filler, or cuts off mid-thought (they are likely pausing to think), do NOT say they are having audio issues — briefly encourage them to go ahead ("Take your time, go ahead.").
+- Only ask them to repeat if the words are genuinely unintelligible, and keep it brief without blaming their audio.
 """.strip()
 
 DIFFICULTY_STYLE = {

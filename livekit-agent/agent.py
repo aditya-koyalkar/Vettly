@@ -184,7 +184,7 @@ async def entrypoint(ctx: JobContext) -> None:
             # detector thinks the answer is finished we wait min_delay; when it thinks the
             # candidate is mid-thought we wait up to max_delay, so interview "let me think"
             # pauses aren't cut off. Dynamic mode adapts within this range per speaker.
-            "endpointing": {"mode": "dynamic", "min_delay": 0.6, "max_delay": 4.0},
+            "endpointing": {"mode": "dynamic", "min_delay": 1.0, "max_delay": 6.0},
             # Adaptive (ML) barge-in: separates real interruptions from backchannels
             # ("mm-hm", "right"), coughs and speaker echo. Falls back to VAD on error.
             "interruption": {
