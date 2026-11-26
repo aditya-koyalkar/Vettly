@@ -23,11 +23,10 @@ from livekit.agents import (
     inference,
     room_io,
 )
-from livekit.plugins import noise_cancellation
 
 from vettly_agent.agents import CloserAgent, GreeterAgent
 from vettly_agent.agents.base import VettlyAgent
-from vettly_agent.api_client import VettlyApi
+from vettly_agent.api_client import InterviewContext, VettlyApi
 from vettly_agent.config import get_settings
 from vettly_agent.models import build_llm, build_stt, build_tts, build_vad
 from vettly_agent.state import InterviewState
@@ -39,6 +38,24 @@ settings = get_settings()
 
 #: How often the watchdog checks the interview clock.
 CLOCK_TICK_SEC = 5
+
+
+def _session_keyterms(interview: InterviewContext) -> list[str]:
+    """Boost recognition of role, company, and domain terms without hitting keyterm caps."""
+    raw = [interview.jobTitle, interview.company, *interview.focusAreas, *(q.topic for q in interview.questions)]
+    terms: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        term = item.strip()
+        if not term or len(term) > 40:
+            continue
+        key = term.lower()
+        if key not in seen:
+            seen.add(key)
+            terms.append(term)
+        if len(terms) >= 15:
+            break
+    return terms
 
 
 def prewarm(proc: JobProcess) -> None:
@@ -80,9 +97,9 @@ async def entrypoint(ctx: JobContext) -> None:
             # Semantic end-of-turn model: tells "I'm thinking..." pauses apart from
             # finished answers. Cloud model with on-device fallback.
             "turn_detection": inference.TurnDetector(),
-            # Interview answers start slowly ("Yes... so...") and pause mid-thought;
-            # keep min_delay comfortably above VAD's 0.55s silence window.
-            "endpointing": {"mode": "dynamic", "min_delay": 1.2, "max_delay": 4.5},
+            # Leave enough headroom above VAD (0.55s) + remote STT RTT so trailing
+            # words finalize inside the turn rather than arriving after commit.
+            "endpointing": {"mode": "dynamic", "min_delay": 1.5, "max_delay": 5.0},
             # Stop immediately on real user speech (>= 0.5s) and never drop transcripts
             # in an adaptive backchannel gate or auto-resume over the candidate.
             "interruption": {
@@ -94,7 +111,11 @@ async def entrypoint(ctx: JobContext) -> None:
             # Wait for complete turns so thinking pauses don't trigger speculative LLM/tool calls.
             "preemptive_generation": {"enabled": False},
         },
-        # Browser WebRTC + BVC already do AEC; 3.0s default makes the agent deaf at turn start.
+        stt_context_options={
+            "keyterms": _session_keyterms(interview),
+            "forward_chat_context": False,
+        },
+        # Browser WebRTC already does AEC; 3.0s default makes the agent deaf at turn start.
         aec_warmup_duration=0.4,
         max_tool_steps=4,
         user_away_timeout=35.0,
@@ -150,7 +171,8 @@ async def entrypoint(ctx: JobContext) -> None:
         agent=GreeterAgent(interview),
         room=ctx.room,
         room_options=room_io.RoomOptions(
-            audio_input=room_io.AudioInputOptions(noise_cancellation=noise_cancellation.BVC()),
+            # Browser WebRTC already runs AEC + noise suppression; omit server-side BVC
+            # to avoid double-filtering and clipping soft/short candidate speech.
             close_on_disconnect=True,
         ),
     )

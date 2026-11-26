@@ -1,6 +1,6 @@
 """Speech and language model chains with ordered multi-provider fallbacks.
 
-    STT: Direct Deepgram (nova-3, en-IN)
+    STT: Direct Deepgram (nova-3, en)
          -> LiveKit Inference (deepgram/nova-3 -> assemblyai/assemblyai-stt-3-7-realtime-agent)
     LLM: OpenRouter primary key (nemotron-3.5-lightning:free)
          -> OpenRouter secondary key (nemotron-3.5-lightning:free)
@@ -41,7 +41,11 @@ def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
                 language=settings.deepgram_stt_language,
                 api_key=settings.deepgram_api_key,
                 interim_results=True,
-                endpointing_ms=400,
+                # Finalize quickly so remote STT latency fits cleanly inside endpointing.min_delay.
+                endpointing_ms=200,
+                utterance_end_ms=1000,
+                no_delay=True,
+                smart_format=False,
                 punctuate=True,
                 filler_words=True,
             )
@@ -81,8 +85,14 @@ def build_llm(settings: Settings) -> llm.LLM:
 
     chain.append(inference.LLM(settings.livekit_llm_model))
 
-    # Voice latency budget: give up on a provider quickly and move on.
-    return llm.FallbackAdapter(chain, attempt_timeout=6.0, max_retry_per_llm=0)
+    # Give up quickly on timeouts/429s and stick to the working fallback for the call.
+    return llm.FallbackAdapter(
+        chain,
+        attempt_timeout=6.0,
+        max_retry_per_llm=0,
+        retry_interval=60.0,
+        sticky=True,
+    )
 
 
 def build_tts(settings: Settings) -> tts.TTS:
