@@ -35,10 +35,21 @@ export function LiveInterviewPage() {
     [id],
   )
   const session = useSession(tokenSource, { agentConnectTimeoutMilliseconds: 30_000 })
+  const sessionRef = useRef(session)
   const [joining, setJoining] = useState(false)
 
-  // Leave the room if the user navigates away mid-call.
-  useEffect(() => () => void session.end(), [session])
+  useEffect(() => {
+    sessionRef.current = session
+  }, [session])
+
+  // Leave the room only if the user actually unmounts mid-call (not on session state transitions or StrictMode mount).
+  useEffect(() => {
+    return () => {
+      if (sessionRef.current.connectionState !== 'disconnected') {
+        void sessionRef.current.end()
+      }
+    }
+  }, [])
 
   async function join() {
     setJoining(true)
@@ -236,7 +247,9 @@ function InterviewRoom({ sessionId, title, durationMinutes }: { sessionId: strin
 
 function TranscriptFeed({ messages }: { messages: ReturnType<typeof useSessionMessages>['messages'] }) {
   const endRef = useRef<HTMLDivElement>(null)
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }), [messages.length])
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [messages.length])
   const lines = messages.filter((m) => m.type === 'agentTranscript' || m.type === 'userTranscript')
 
   return (
