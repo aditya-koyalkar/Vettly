@@ -123,10 +123,10 @@ export class SessionsService {
   }
 
   enqueuePrep(sessionId: string) {
-    return this.prepQueue.add('prep', { sessionId }, { jobId: `prep:${sessionId}:${Date.now()}` });
+    return this.prepQueue.add('prep', { sessionId }, { jobId: `prep-${sessionId}-${Date.now()}` });
   }
 
   enqueueAnalysis(sessionId: string) {
-    return this.analysisQueue.add('analyze', { sessionId }, { jobId: `analysis:${sessionId}:${Date.now()}` });
+    return this.analysisQueue.add('analyze', { sessionId }, { jobId: `analysis-${sessionId}-${Date.now()}` });
   }
 }

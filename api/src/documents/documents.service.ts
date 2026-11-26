@@ -50,7 +50,7 @@ export class DocumentsService {
       select: documentSummary,
     });
 
-    await this.ingestQueue.add('ingest', { documentId: document.id }, { jobId: `ingest:${document.id}` });
+    await this.ingestQueue.add('ingest', { documentId: document.id }, { jobId: `ingest-${document.id}` });
     return document;
   }
 

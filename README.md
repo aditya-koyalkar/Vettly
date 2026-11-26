@@ -57,7 +57,7 @@ When a resume or job description is uploaded (PDF, DOCX, TXT, Markdown, or raw p
 * **Extraction & normalization**: Text is extracted from PDFs (`unpdf` with merged pages), DOCX (`mammoth`), or plain UTF-8 files, collapsing formatting noise while preserving paragraph boundaries. Inputs under 50 extracted characters (such as scanned, un-OCR'd PDFs) are rejected.
 * **Section-aware chunking**: Documents are split along detected headings (Markdown headers, uppercase headings, or colon-terminated section labels) so chunks never cross section boundaries. Each chunk is prefixed with its section name, capped at `1,200` characters, split on sentence/line boundaries if oversized, and carried forward with a `150`-character word-boundary overlap.
 * **Concurrent indexing & profiling**: On ingest, the worker runs two tasks in parallel—embedding/indexing chunks and extracting a structured JSON profile (`ResumeProfile` or `JobProfile`) using an LLM at temperature `0`.
-* **Asymmetric embeddings & dual indexes**: Chunks are embedded with `gemini-embedding-001` (`768` dimensions) using separate `RETRIEVAL_DOCUMENT` (at ingest) and `RETRIEVAL_QUERY` (at search) task types. PostgreSQL stores both a `pgvector` HNSW cosine index (`vector_cosine_ops`) and a GIN full-text index (`to_tsvector('english', content)`).
+* **Embeddings & dual indexes**: Chunks are embedded via OpenRouter (`nvidia/nemotron-3.5-embed-8b:free`, `768` dimensions). PostgreSQL stores both a `pgvector` HNSW cosine index (`vector_cosine_ops`) and a GIN full-text index (`to_tsvector('english', content)`).
 * **Hybrid search with Reciprocal Rank Fusion (RRF)**: Search queries pull up to `20` candidates from the dense vector leg (`<=>`) and `20` from the lexical full-text leg (`ts_rank_cd`). Because `websearch_to_tsquery` ANDs every term and misses natural-language queries against terse bullets, the lexical leg builds an OR-joined `tsquery`. Results are merged using `1 / (60 + dense_rank) + 1 / (60 + lexical_rank)`. If embedding generation fails, search automatically degrades to lexical-only.
 
 ---
@@ -124,14 +124,15 @@ Live interviews run inside a Python `livekit-agents` worker connected to LiveKit
 
 ## Model Routing & Fallbacks
 
-Both the NestJS API and the Python voice worker walk multi-provider chains so exhausted free-tier quotas or timeouts do not break a session:
+Configured for zero-cost operation across free-tier credits and `:free` endpoints, with automatic key rotation (`OPENROUTER_API_KEY` ↔ `OPENROUTER_API_KEY_SECONDARY`) and ordered fallbacks:
 
-| Modality | Tier 1 | Tier 2 | Tier 3 | Timeout / Retry |
+| Modality | Tier 1 (Primary) | Tier 2 (Fallback) | Tier 3+ (Fallbacks) | Timeout / Retry |
 |---|---|---|---|---|
-| **Prep & Analysis LLM** | Gemini (`gemini-2.5-flash`) | Groq (`openai/gpt-oss-120b`) | Groq (`llama-3.3-70b-versatile`) | `60s` per slot |
-| **Voice LLM** | LiveKit Inference (`openai/gpt-4.1-mini`) | Gemini (`gemini-2.5-flash`) | Groq (`gpt-oss-120b` → `llama-3.3-70b-versatile`) | `6s` attempt timeout |
-| **Voice STT** | LiveKit Inference (`deepgram/nova-3`) | LiveKit Inference (`assemblyai/universal-streaming`) | Groq (`whisper-large-v3-turbo` via VAD) | Fallback adapter |
-| **Voice TTS** | LiveKit Inference (`cartesia/sonic-3`) | LiveKit Inference (`deepgram/aura-2`) | Groq (`canopylabs/orpheus-v1-english`) | 1 retry per provider |
+| **Prep & Analysis LLM** | `nvidia/nemotron-3.5-lightning:free` (OpenRouter keys 1 ↔ 2) | `nvidia/nemotron-3-ultra-550b-a55b:free` (OpenRouter keys 1 ↔ 2) | `google/gemma-4-31b-it:free` (OpenRouter keys 1 ↔ 2) | `60s` per slot |
+| **Embeddings** | `nvidia/nemotron-3.5-embed-8b:free` (OpenRouter key 1 ↔ 2, `768`-d) | Lexical-only Postgres FTS (`null` fallback) | — | — |
+| **Voice LLM** | `nvidia/nemotron-3.5-lightning:free` (OpenRouter key 1) | `nvidia/nemotron-3.5-lightning:free` (OpenRouter key 2) | `google/gemma-4-31b-it` (LiveKit Inference) | `6s` attempt timeout |
+| **Voice STT** | `nova-3` (`en-IN`, Direct Deepgram) | `deepgram/nova-3` (`en-IN`, LiveKit Inference) | `assemblyai/assemblyai-stt-3-7-realtime-agent` (LiveKit Inference) | Fallback adapter + VAD |
+| **Voice TTS** | `aura-2-asteria-en` (Direct Deepgram) | `fishaudio/s2.1-pro-free` (LiveKit Inference) | `deepgram/aura-2` (`athena`) → `cartesia/sonic-3` (LiveKit Inference) | 1 retry per model |
 
 Every generated report records which model slot produced each evaluator and synthesizer output.
 
@@ -170,8 +171,8 @@ Three Redis-backed BullMQ workers run in-process inside the NestJS API (`attempt
 
 ## Tech Stack
 
-* **API**: NestJS 12, TypeScript 6, Prisma 6, PostgreSQL 16 + `pgvector`, Redis 7 + BullMQ 6, LangGraph, LangChain (`@langchain/google-genai`, `@langchain/groq`), LiveKit Server SDK, Zod 4, `unpdf`, `mammoth`
-* **Voice Worker**: Python ≥ 3.13 (`uv`), `livekit-agents[google,groq]`, `livekit-plugins-noise-cancellation`, `aiohttp`, `pydantic-settings`
+* **API**: NestJS 12, TypeScript 6, Prisma 6, PostgreSQL 16 + `pgvector`, Redis 7 + BullMQ 6, LangGraph, LangChain (`@langchain/openai` via OpenRouter), LiveKit Server SDK, Zod 4, `unpdf`, `mammoth`
+* **Voice Worker**: Python ≥ 3.13 (`uv`), `livekit-agents[openai]` (OpenRouter LLM/STT/TTS), `livekit-plugins-noise-cancellation`, `aiohttp`, `pydantic-settings`
 * **Web UI**: React 19, TypeScript, Vite 8, Tailwind CSS 4, TanStack Query 5, React Router 8, LiveKit Components React
 
 ---
@@ -191,7 +192,7 @@ Three Redis-backed BullMQ workers run in-process inside the NestJS API (`attempt
 
 ### Prerequisites
 * Node.js 22+, Python 3.13+ with [`uv`](https://docs.astral.sh/uv/), and Docker
-* API keys for **LiveKit Cloud**, **Google Gemini**, and optionally **Groq**
+* API keys for **LiveKit Cloud** and **OpenRouter**
 
 ### Option 1: Hybrid local dev (recommended)
 

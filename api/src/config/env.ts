@@ -22,13 +22,13 @@ export const envSchema = z.object({
   LIVEKIT_API_SECRET: z.string().min(1),
   LIVEKIT_AGENT_NAME: z.string().default('vettly-interviewer'),
 
-  GEMINI_API_KEY: z.string().min(1),
-  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
-  GEMINI_EMBEDDING_MODEL: z.string().default('gemini-embedding-001'),
-
-  GROQ_API_KEY: z.string().optional(),
-  GROQ_MODEL: z.string().default('openai/gpt-oss-120b'),
-  GROQ_FALLBACK_MODEL: z.string().default('llama-3.3-70b-versatile'),
+  OPENROUTER_API_KEY: z.string().min(1),
+  OPENROUTER_API_KEY_SECONDARY: z.string().optional(),
+  OPENROUTER_BASE_URL: z.string().default('https://openrouter.ai/api/v1'),
+  OPENROUTER_LLM_MODEL: z.string().default('nvidia/nemotron-3.5-lightning:free'),
+  OPENROUTER_LLM_FALLBACK_1: z.string().default('nvidia/nemotron-3-ultra-550b-a55b:free'),
+  OPENROUTER_LLM_FALLBACK_2: z.string().default('google/gemma-4-31b-it:free'),
+  OPENROUTER_EMBEDDING_MODEL: z.string().default('nvidia/nemotron-3.5-embed-8b:free'),
 });
 
 export type Env = z.infer<typeof envSchema>;
