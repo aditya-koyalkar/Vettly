@@ -7,7 +7,7 @@ import { QUEUES, type SessionJob } from '../queues.js';
 import type { FitAnalysis, InterviewPlan, JobProfile } from '../agents/schemas.js';
 import { AnalysisGraph } from './analysis.graph.js';
 
-/** Keeps long interviews inside a free-tier context window. */
+/** Bounds transcript size to fit model context limits cleanly. */
 const MAX_TRANSCRIPT_CHARS = 60_000;
 
 export function formatTranscript(turns: Pick<TranscriptTurn, 'role' | 'content' | 'offsetSec'>[]): string {

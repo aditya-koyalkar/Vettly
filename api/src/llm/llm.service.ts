@@ -34,7 +34,7 @@ export interface StructuredOptions {
 /**
  * Model gateway for every non-realtime LLM and embedding call in the API,
  * routed through OpenRouter with key rotation (primary/secondary) and ordered
- * free-model fallbacks to spread rate limits.
+ * model fallbacks for high availability.
  */
 @Injectable()
 export class LlmService {
@@ -99,7 +99,7 @@ export class LlmService {
             temperature,
             maxTokens: 8192,
             maxRetries: 0,
-            // Nemotron free models default to lengthy internal reasoning that
+            // Nemotron models default to lengthy internal reasoning that
             // hits token/time limits on structured JSON; disable it when supported.
             modelKwargs: model.includes('nemotron') ? { reasoning: { enabled: false } } : undefined,
             configuration: { baseURL: this.baseURL },

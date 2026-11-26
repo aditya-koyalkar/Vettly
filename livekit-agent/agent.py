@@ -80,14 +80,24 @@ async def entrypoint(ctx: JobContext) -> None:
             # Semantic end-of-turn model: tells "I'm thinking..." pauses apart from
             # finished answers. Cloud model with on-device fallback.
             "turn_detection": inference.TurnDetector(),
-            # Interview answers are long and pause-heavy; adapt the wait to the speaker.
-            "endpointing": {"mode": "dynamic", "min_delay": 0.6, "max_delay": 4.0},
-            # ML-based barge-in so "mm-hmm" backchannels don't cut the interviewer off.
-            "interruption": {"mode": "adaptive", "min_duration": 0.6, "false_interruption_timeout": 1.5},
-            "preemptive_generation": {"enabled": True},
+            # Interview answers start slowly ("Yes... so...") and pause mid-thought;
+            # keep min_delay comfortably above VAD's 0.55s silence window.
+            "endpointing": {"mode": "dynamic", "min_delay": 1.2, "max_delay": 4.5},
+            # Stop immediately on real user speech (>= 0.5s) and never drop transcripts
+            # in an adaptive backchannel gate or auto-resume over the candidate.
+            "interruption": {
+                "mode": "vad",
+                "min_duration": 0.5,
+                "min_words": 0,
+                "resume_false_interruption": False,
+            },
+            # Wait for complete turns so thinking pauses don't trigger speculative LLM/tool calls.
+            "preemptive_generation": {"enabled": False},
         },
+        # Browser WebRTC + BVC already do AEC; 3.0s default makes the agent deaf at turn start.
+        aec_warmup_duration=0.4,
         max_tool_steps=4,
-        user_away_timeout=25.0,
+        user_away_timeout=35.0,
     )
     recorder = TranscriptRecorder(session)
 

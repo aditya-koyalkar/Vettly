@@ -23,4 +23,4 @@ class GreeterAgent(VettlyAgent):
         from .interviewer import InterviewerAgent
 
         self.state.start_clock()
-        return InterviewerAgent(self.state.context, chat_ctx=self.carried_context()), "Starting the interview."
+        return InterviewerAgent(self.state.context, chat_ctx=self.carried_context())

@@ -98,7 +98,7 @@ class InterviewerAgent(VettlyAgent):
     @function_tool
     async def wrap_up(self):
         """End the question phase: all questions are done, time is up, or the candidate asked to stop."""
-        return self._closer(), "Moving to the wrap-up."
+        return self._closer()
 
     async def _hand_to_closer(self) -> None:
         """Handoff outside a tool call (empty plan, or the session clock ran out)."""

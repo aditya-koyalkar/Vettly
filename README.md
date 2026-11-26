@@ -124,7 +124,7 @@ Live interviews run inside a Python `livekit-agents` worker connected to LiveKit
 
 ## Model Routing & Fallbacks
 
-Configured for zero-cost operation across free-tier credits and `:free` endpoints, with automatic key rotation (`OPENROUTER_API_KEY` ↔ `OPENROUTER_API_KEY_SECONDARY`) and ordered fallbacks:
+Configured with automatic key rotation (`OPENROUTER_API_KEY` ↔ `OPENROUTER_API_KEY_SECONDARY`) and ordered multi-provider fallbacks:
 
 | Modality | Tier 1 (Primary) | Tier 2 (Fallback) | Tier 3+ (Fallbacks) | Timeout / Retry |
 |---|---|---|---|---|

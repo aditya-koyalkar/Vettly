@@ -1,4 +1,4 @@
-"""Speech and language model chains configured for zero-cost tiers.
+"""Speech and language model chains with ordered multi-provider fallbacks.
 
     STT: Direct Deepgram (nova-3, en-IN)
          -> LiveKit Inference (deepgram/nova-3 -> assemblyai/assemblyai-stt-3-7-realtime-agent)
@@ -23,8 +23,12 @@ def _split_model_voice(spec: str) -> tuple[str, str | None]:
 
 
 def build_vad() -> vad.VAD:
-    # Slightly longer silence than default: candidates pause to think mid-answer.
-    return inference.VAD(min_silence_duration=0.4, activation_threshold=0.5)
+    # Slightly longer silence and firmer threshold so breaths and room noise don't chop turns.
+    return inference.VAD(
+        min_speech_duration=0.1,
+        min_silence_duration=0.55,
+        activation_threshold=0.55,
+    )
 
 
 def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
@@ -36,6 +40,10 @@ def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
                 model=settings.deepgram_stt_model,
                 language=settings.deepgram_stt_language,
                 api_key=settings.deepgram_api_key,
+                interim_results=True,
+                endpointing_ms=400,
+                punctuate=True,
+                filler_words=True,
             )
         )
 
