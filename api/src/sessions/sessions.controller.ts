@@ -38,6 +38,13 @@ export class SessionsController {
     return this.sessions.retry(userId, sessionId);
   }
 
+  /** Clones an existing session's prep brief & plan into a new READY session for instant retake. */
+  @Post(':id/retake')
+  @HttpCode(HttpStatus.CREATED)
+  retake(@CurrentUser('id') userId: string, @Param('id', { schema: id }) sessionId: string) {
+    return this.sessions.retake(userId, sessionId);
+  }
+
   /** Returns LiveKit credentials; joining dispatches the interviewer agent. */
   @Post(':id/join')
   join(@CurrentUser() user: AuthenticatedUser, @Param('id', { schema: id }) sessionId: string) {

@@ -30,18 +30,24 @@ import {
   formatOffset,
   scoreTone,
 } from '@/lib/format'
-import { useSession, useSessionAction } from '@/lib/queries'
+import { useRetakeSession, useSession, useSessionAction } from '@/lib/queries'
 import type { FitAnalysis, InterviewPlan, InterviewReport, SessionDetail, TranscriptTurn } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 export function SessionPage() {
   const { id = '' } = useParams()
+  const navigate = useNavigate()
   const { data: session, isLoading, error } = useSession(id)
+  const retake = useRetakeSession()
 
   if (isLoading) return <Skeleton className="h-96 rounded-xl" />
   if (error || !session) {
     return <p className="text-sm text-muted-foreground">This session could not be found.</p>
   }
+
+  const canRetake =
+    Boolean(session.fitAnalysis && session.plan) &&
+    (session.status === 'COMPLETED' || session.status === 'ANALYZING' || session.status === 'FAILED')
 
   return (
     <div>
@@ -59,6 +65,22 @@ export function SessionPage() {
             {session.durationMinutes} min · {session.resume.title} → {session.jobDescription.title}
           </p>
         </div>
+        {canRetake && (
+          <Button
+            variant="outline"
+            disabled={retake.isPending}
+            onClick={async () => {
+              try {
+                const created = await retake.mutateAsync(session.id)
+                navigate(`/app/sessions/${created.id}/live`)
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Could not create retake session')
+              }
+            }}
+          >
+            {retake.isPending ? <Loader2 className="animate-spin" /> : <RotateCcw />} Retake interview
+          </Button>
+        )}
       </div>
 
       {session.status === 'PREPARING' && <PipelineView kind="prep" />}

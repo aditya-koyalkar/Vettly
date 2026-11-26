@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
+import type { Prisma } from '@prisma/client';
 import type { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { QUEUES, type SessionJob } from '../queues.js';
@@ -98,6 +99,29 @@ export class SessionsService {
     });
     if (analysisStage) await this.enqueueAnalysis(id);
     else await this.enqueuePrep(id);
+  }
+
+  /** Creates a new READY session reusing the prepared fit analysis and question plan. */
+  async retake(userId: string, id: string) {
+    const source = await this.get(userId, id);
+    if (source.fitAnalysis == null || source.plan == null) {
+      throw new ConflictException('This interview does not have a prepared plan yet');
+    }
+
+    return this.prisma.interviewSession.create({
+      data: {
+        userId,
+        resumeId: source.resumeId,
+        jobDescriptionId: source.jobDescriptionId,
+        title: source.title,
+        type: source.type,
+        difficulty: source.difficulty,
+        durationMinutes: source.durationMinutes,
+        status: 'READY',
+        fitAnalysis: source.fitAnalysis as Prisma.InputJsonValue,
+        plan: source.plan as Prisma.InputJsonValue,
+      },
+    });
   }
 
   async join(userId: string, userName: string, id: string) {

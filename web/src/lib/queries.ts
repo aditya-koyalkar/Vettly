@@ -90,6 +90,14 @@ export function useSessionAction(id: string, action: 'retry' | 'end') {
   })
 }
 
+export function useRetakeSession() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api<{ id: string }>(`/sessions/${id}/retake`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.sessions }),
+  })
+}
+
 export function useDeleteSession() {
   const qc = useQueryClient()
   return useMutation({
