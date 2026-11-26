@@ -1,7 +1,8 @@
 """Speech and language model chains with ordered multi-provider fallbacks.
 
-    STT: Direct Deepgram (nova-3, en-IN)
-         -> LiveKit Inference (deepgram/nova-3 -> assemblyai/assemblyai-stt-3-7-realtime-agent)
+    STT: LiveKit Inference (assemblyai/assemblyai-stt-3-7-realtime-agent)
+         -> Direct Deepgram (nova-3 via STT, or flux-* via STTv2)
+         -> LiveKit Inference (deepgram/nova-3)
     LLM: OpenRouter primary key (nemotron-3.5-lightning:free)
          -> OpenRouter secondary key (nemotron-3.5-lightning:free)
          -> LiveKit Inference (google/gemma-4-31b-it)
@@ -11,8 +12,9 @@
 
 from __future__ import annotations
 
+from livekit import rtc
 from livekit.agents import NOT_GIVEN, inference, llm, stt, tts, vad
-from livekit.plugins import deepgram, openai
+from livekit.plugins import deepgram, noise_cancellation, openai
 
 from .config import Settings
 
@@ -22,38 +24,86 @@ def _split_model_voice(spec: str) -> tuple[str, str | None]:
     return model, voice or None
 
 
+# Standard voice/VAD sample rate expected by Silero VAD and Deepgram Nova-3/Flux.
+DEEPGRAM_STT_SAMPLE_RATE = 16000
+
+
+def build_noise_cancellation(settings: Settings) -> rtc.NoiseCancellationOptions | None:
+    """Server-side Krisp filter applied to the candidate's track before VAD/STT.
+
+    NC (noise only) is the default: BVC is tuned for close-talking headsets and
+    attenuates soft, distant, or laptop-mic speech, which shows up as dropped words.
+    """
+    if settings.noise_cancellation == "bvc":
+        return noise_cancellation.BVC()
+    if settings.noise_cancellation == "nc":
+        return noise_cancellation.NC()
+    return None
+
+
 def build_vad() -> vad.VAD:
-    # Slightly longer silence and firmer threshold so breaths and room noise don't chop turns.
+    # 0.5 activation + 100ms minimum speech keeps clicks, breaths and keyboard noise from
+    # registering as speech (and from interrupting the agent). 0.45s silence ends a VAD
+    # segment; the turn detector + endpointing delay decide whether the turn is over.
     return inference.VAD(
         min_speech_duration=0.1,
-        min_silence_duration=0.55,
-        activation_threshold=0.55,
+        min_silence_duration=0.45,
+        prefix_padding_duration=0.5,
+        activation_threshold=0.5,
     )
 
 
 def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
     chain: list[stt.STT] = []
 
-    if settings.deepgram_api_key.strip():
+    if settings.livekit_stt_model.strip():
+        extra_kwargs = (
+            {"format_turns": True} if settings.livekit_stt_model.startswith("assemblyai/") else NOT_GIVEN
+        )
         chain.append(
-            deepgram.STT(
-                model=settings.deepgram_stt_model,
-                language=settings.deepgram_stt_language,
-                api_key=settings.deepgram_api_key,
-                interim_results=True,
-                # Keep full clause context during continuous speech instead of resetting on 200ms dips.
-                endpointing_ms=450,
-                utterance_end_ms=1200,
-                no_delay=False,
-                smart_format=True,
-                punctuate=True,
-                filler_words=True,
+            inference.STT(
+                settings.livekit_stt_model,
+                language=settings.livekit_stt_language,
+                extra_kwargs=extra_kwargs,
             )
         )
 
-    chain.append(inference.STT(settings.livekit_stt_model, language=settings.livekit_stt_language))
+    if settings.deepgram_api_key.strip():
+        if settings.deepgram_stt_model.startswith("flux"):
+            chain.append(
+                deepgram.STTv2(
+                    model=settings.deepgram_stt_model,
+                    sample_rate=DEEPGRAM_STT_SAMPLE_RATE,
+                    api_key=settings.deepgram_api_key,
+                )
+            )
+        else:
+            chain.append(
+                deepgram.STT(
+                    model=settings.deepgram_stt_model,
+                    sample_rate=DEEPGRAM_STT_SAMPLE_RATE,
+                    language=settings.deepgram_stt_language,
+                    api_key=settings.deepgram_api_key,
+                    endpointing_ms=settings.deepgram_endpointing_ms,
+                    utterance_end_ms=1200,
+                    interim_results=True,
+                    # smart_format gives readable numbers/emails/acronyms in the saved
+                    # transcript; no_delay stops it holding finals back for formatting.
+                    smart_format=True,
+                    no_delay=True,
+                    punctuate=True,
+                    # Fillers ("um", "uh") help the turn detector spot unfinished thoughts.
+                    filler_words=True,
+                )
+            )
+
     if settings.livekit_stt_fallback_model.strip():
-        chain.append(inference.STT(settings.livekit_stt_fallback_model, language="en"))
+        chain.append(
+            inference.STT(
+                settings.livekit_stt_fallback_model,
+                language=settings.deepgram_stt_language,
+            )
+        )
 
     return stt.FallbackAdapter(chain, vad=vad_model)
 

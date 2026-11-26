@@ -87,7 +87,23 @@ export function SessionPage() {
       {(session.status === 'READY' || session.status === 'IN_PROGRESS') && <PrepBrief session={session} />}
       {session.status === 'ANALYZING' && <PipelineView kind="analysis" />}
       {session.status === 'COMPLETED' && session.report && <ReportView session={session} report={session.report} />}
-      {session.status === 'FAILED' && <FailedView session={session} />}
+      {session.status === 'COMPLETED' && !session.report && (
+        <div className="space-y-6">
+          <section className="rounded-xl border bg-card p-6">
+            <h2 className="font-medium">Transcript saved (analysis paused)</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Post-call analysis is turned off while tuning speech-to-text, so no feedback report was generated.
+            </p>
+          </section>
+          <Transcript turns={session.turns} defaultOpen />
+        </div>
+      )}
+      {session.status === 'FAILED' && (
+        <div className="space-y-6">
+          <FailedView session={session} />
+          <Transcript turns={session.turns} />
+        </div>
+      )}
     </div>
   )
 }
@@ -363,8 +379,8 @@ function ReportView({ session, report }: { session: SessionDetail; report: Inter
   )
 }
 
-function Transcript({ turns }: { turns: TranscriptTurn[] }) {
-  const [open, setOpen] = useState(false)
+function Transcript({ turns, defaultOpen = false }: { turns: TranscriptTurn[]; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
   if (!turns.length) return null
   return (
     <section className="rounded-xl border bg-card p-6">

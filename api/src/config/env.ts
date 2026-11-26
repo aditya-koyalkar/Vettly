@@ -29,6 +29,12 @@ export const envSchema = z.object({
   OPENROUTER_LLM_FALLBACK_1: z.string().default('nvidia/nemotron-3-ultra-550b-a55b:free'),
   OPENROUTER_LLM_FALLBACK_2: z.string().default('google/gemma-4-31b-it:free'),
   OPENROUTER_EMBEDDING_MODEL: z.string().default('nvidia/nemotron-3.5-embed-8b:free'),
+
+  /** Temporarily skip post-call LangGraph analysis while debugging live voice/STT. */
+  SKIP_POST_CALL_ANALYSIS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;

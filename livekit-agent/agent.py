@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sys
 
 from dotenv import load_dotenv
@@ -16,19 +17,29 @@ from livekit.agents import (
     AgentServer,
     AgentSession,
     CloseEvent,
+    ErrorEvent,
     JobContext,
     JobProcess,
+    UserInputTranscribedEvent,
     UserStateChangedEvent,
     cli,
     inference,
     room_io,
+    stt,
 )
 
 from vettly_agent.agents import CloserAgent, GreeterAgent
 from vettly_agent.agents.base import VettlyAgent
 from vettly_agent.api_client import InterviewContext, VettlyApi
 from vettly_agent.config import get_settings
-from vettly_agent.models import build_llm, build_stt, build_tts, build_vad
+from vettly_agent.models import (
+    DEEPGRAM_STT_SAMPLE_RATE,
+    build_llm,
+    build_noise_cancellation,
+    build_stt,
+    build_tts,
+    build_vad,
+)
 from vettly_agent.state import InterviewState
 from vettly_agent.transcript import TranscriptRecorder
 
@@ -40,27 +51,92 @@ settings = get_settings()
 CLOCK_TICK_SEC = 5
 
 
+_KEYTERM_STOPWORDS = frozenset(
+    {
+        "after",
+        "and",
+        "can",
+        "could",
+        "for",
+        "how",
+        "in",
+        "moving",
+        "specifically",
+        "tell",
+        "the",
+        "this",
+        "walk",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "why",
+        "you",
+        "your",
+    }
+)
+_TECH_TOKEN_RE = re.compile(r"\b(?:[A-Z][A-Za-z0-9.+#-]{1,}|[a-z]+[A-Z][A-Za-z0-9]*)\b")
+# Tokens that are clearly technical regardless of position: acronyms, camelCase/
+# PascalCase with an inner capital, or containing digits / . + # (e.g. "Node.js", "C++").
+_STRONG_TECH_RE = re.compile(r"^(?:[A-Z0-9]{2,}s?|.*[a-z][A-Z].*|.*[0-9.+#].*)$")
+_SENTENCE_START_RE = re.compile(r"(?:^|[.!?:;\n]\s*|[\"'(]\s*)$")
+
+
+def _tech_tokens(text: str) -> list[str]:
+    """Capitalized/technical tokens, skipping plain capitalized words that only start
+    a sentence ("Describe", "Imagine"): boosting those as keyterms skews Deepgram."""
+    out: list[str] = []
+    for m in _TECH_TOKEN_RE.finditer(text):
+        token = m.group(0)
+        if not _STRONG_TECH_RE.match(token) and _SENTENCE_START_RE.search(text[: m.start()]):
+            continue
+        out.append(token)
+    return out
+
+
 def _session_keyterms(interview: InterviewContext) -> list[str]:
-    """Boost recognition of role, company, and domain terms without hitting keyterm caps."""
-    raw = [interview.jobTitle, interview.company, *interview.focusAreas, *(q.topic for q in interview.questions)]
+    """Extract role, company, and technical terms for STT keyterm boosting."""
     terms: list[str] = []
     seen: set[str] = set()
-    for item in raw:
-        term = item.strip()
-        if not term or len(term) > 40:
-            continue
+
+    def _add(raw_term: str) -> None:
+        term = raw_term.strip(".,:;!?()[]{}\"' ")
+        if not term or len(term) > 40 or len(terms) >= 25:
+            return
         key = term.lower()
-        if key not in seen:
-            seen.add(key)
-            terms.append(term)
-        if len(terms) >= 15:
-            break
+        if key in _KEYTERM_STOPWORDS or key in seen:
+            return
+        seen.add(key)
+        terms.append(term)
+
+    direct_terms = [
+        interview.jobTitle,
+        interview.company,
+        *interview.focusAreas,
+        *(q.topic for q in interview.questions),
+    ]
+    for direct in direct_terms:
+        if len(direct.strip()) <= 40:
+            _add(direct)
+
+    text_sources = [
+        interview.interviewerBrief,
+        *interview.focusAreas,
+        *(q.question for q in interview.questions),
+    ]
+    for text in text_sources:
+        for match in _tech_tokens(text):
+            for part in match.split("/"):
+                _add(part)
+
     return terms
 
 
 def prewarm(proc: JobProcess) -> None:
     # Load the VAD once per worker process, not per call.
     proc.userdata["vad"] = build_vad()
+    proc.userdata["nc"] = build_noise_cancellation(settings)
 
 
 server = AgentServer(setup_fnc=prewarm)
@@ -86,9 +162,16 @@ async def entrypoint(ctx: JobContext) -> None:
 
     state = InterviewState(context=interview, api=api, room=ctx.room)
     vad = ctx.proc.userdata["vad"]
+    nc = ctx.proc.userdata["nc"]
+
+    stt_adapter = build_stt(settings, vad)
+
+    @stt_adapter.on("stt_availability_changed")
+    def _on_stt_availability(ev: stt.AvailabilityChangedEvent) -> None:
+        logger.warning("STT availability changed: %s available=%s", ev.stt.label, ev.available)
 
     session = AgentSession[InterviewState](
-        stt=build_stt(settings, vad),
+        stt=stt_adapter,
         llm=build_llm(settings),
         tts=build_tts(settings),
         vad=vad,
@@ -97,26 +180,32 @@ async def entrypoint(ctx: JobContext) -> None:
             # Semantic end-of-turn model: tells "I'm thinking..." pauses apart from
             # finished answers. Cloud model with on-device fallback.
             "turn_detection": inference.TurnDetector(),
-            # Leave enough headroom above VAD (0.55s) + Deepgram (450ms + lookahead)
-            # so trailing words finalize inside the turn rather than arriving after commit.
-            "endpointing": {"mode": "dynamic", "min_delay": 1.6, "max_delay": 5.0},
-            # Stop immediately on real user speech (>= 0.5s) and never drop transcripts
-            # in an adaptive backchannel gate or auto-resume over the candidate.
+            # Delay after VAD end-of-speech (0.45s) before committing the turn. When the
+            # detector thinks the answer is finished we wait min_delay; when it thinks the
+            # candidate is mid-thought we wait up to max_delay, so interview "let me think"
+            # pauses aren't cut off. Dynamic mode adapts within this range per speaker.
+            "endpointing": {"mode": "dynamic", "min_delay": 0.6, "max_delay": 4.0},
+            # Adaptive (ML) barge-in: separates real interruptions from backchannels
+            # ("mm-hm", "right"), coughs and speaker echo. Falls back to VAD on error.
             "interruption": {
-                "mode": "vad",
+                "mode": "adaptive",
                 "min_duration": 0.5,
-                "min_words": 0,
-                "resume_false_interruption": False,
+                "min_words": 1,
+                # If an "interruption" produces no words within 1.5s (noise, echo),
+                # treat it as false and let the agent finish its sentence.
+                "false_interruption_timeout": 1.5,
+                "resume_false_interruption": True,
             },
-            # Wait for complete turns so thinking pauses don't trigger speculative LLM/tool calls.
+            # Wait for complete turns so thinking pauses don't burn free-tier LLM quota.
             "preemptive_generation": {"enabled": False},
         },
         stt_context_options={
             "keyterms": _session_keyterms(interview),
-            "forward_chat_context": False,
+            "forward_chat_context": True,
         },
-        # Browser WebRTC already does AEC; 3.0s default makes the agent deaf at turn start.
-        aec_warmup_duration=0.4,
+        # One-shot: ignore interruptions for the first second of the greeting while the
+        # browser's echo canceller converges (0 let speaker bleed cut the agent off).
+        aec_warmup_duration=1.0,
         max_tool_steps=4,
         user_away_timeout=35.0,
     )
@@ -146,6 +235,14 @@ async def entrypoint(ctx: JobContext) -> None:
                 "or need the question repeated."
             )
 
+    @session.on("user_input_transcribed")
+    def _on_user_transcribed(ev: UserInputTranscribedEvent) -> None:
+        logger.debug("STT %s: %r", "final" if ev.is_final else "interim", ev.transcript)
+
+    @session.on("error")
+    def _on_session_error(ev: ErrorEvent) -> None:
+        logger.error("session error from %s: %s", type(ev.source).__name__, ev.error)
+
     @session.on("close")
     def _on_close(ev: CloseEvent) -> None:
         if ev.error:
@@ -171,9 +268,13 @@ async def entrypoint(ctx: JobContext) -> None:
         agent=GreeterAgent(interview),
         room=ctx.room,
         room_options=room_io.RoomOptions(
-            # Match Deepgram/VAD 16kHz directly and disable server-side AGC so it doesn't
-            # fight browser WebRTC AGC or duck softer syllables mid-sentence.
-            audio_input=room_io.AudioInputOptions(sample_rate=16000, auto_gain_control=False),
+            # Match 16kHz voice rate; Krisp (see NOISE_CANCELLATION) cleans the audio
+            # before VAD/STT. Browser already runs AGC, so keep server AGC off.
+            audio_input=room_io.AudioInputOptions(
+                sample_rate=DEEPGRAM_STT_SAMPLE_RATE,
+                noise_cancellation=nc,
+                auto_gain_control=False,
+            ),
             close_on_disconnect=True,
         ),
     )

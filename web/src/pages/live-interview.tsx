@@ -4,11 +4,12 @@ import {
   SessionProvider,
   StartAudio,
   useAgent,
+  useMediaDeviceSelect,
   useSession,
   useSessionMessages,
   useTrackToggle,
 } from '@livekit/components-react'
-import { Track, TokenSource } from 'livekit-client'
+import { Room, Track, TokenSource } from 'livekit-client'
 import { Loader2, Mic, MicOff, PhoneOff, Headphones, ArrowLeft } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
@@ -34,7 +35,24 @@ export function LiveInterviewPage() {
       }),
     [id],
   )
-  const session = useSession(tokenSource, { agentConnectTimeoutMilliseconds: 30_000 })
+  const room = useMemo(
+    () =>
+      new Room({
+        audioCaptureDefaults: {
+          echoCancellation: true,
+          // Krisp noise cancellation runs server-side; double suppression clips speech onsets.
+          noiseSuppression: false,
+          autoGainControl: true,
+        },
+        // Disable Opus DTX so soft speech from external mics is never gated as silence.
+        publishDefaults: {
+          dtx: false,
+          red: true,
+        },
+      }),
+    [],
+  )
+  const session = useSession(tokenSource, { room, agentConnectTimeoutMilliseconds: 30_000 })
   const sessionRef = useRef(session)
   const [joining, setJoining] = useState(false)
 
@@ -139,6 +157,7 @@ function InterviewRoom({ sessionId, title, durationMinutes }: { sessionId: strin
   const agent = useAgent()
   const { messages } = useSessionMessages()
   const mic = useTrackToggle({ source: Track.Source.Microphone })
+  const micDevices = useMediaDeviceSelect({ kind: 'audioinput' })
   const [ending, setEnding] = useState(false)
   const elapsed = useElapsedSeconds()
 
@@ -220,7 +239,7 @@ function InterviewRoom({ sessionId, title, durationMinutes }: { sessionId: strin
         </aside>
       </div>
 
-      <footer className="flex items-center justify-center gap-3 border-t px-4 py-4">
+      <footer className="flex flex-wrap items-center justify-center gap-3 border-t px-4 py-4">
         <Button
           variant={mic.enabled ? 'secondary' : 'destructive'}
           size="lg"
@@ -231,6 +250,20 @@ function InterviewRoom({ sessionId, title, durationMinutes }: { sessionId: strin
         >
           {mic.enabled ? <Mic /> : <MicOff />} {mic.enabled ? 'Mute' : 'Unmute'}
         </Button>
+        {micDevices.devices.length > 0 && (
+          <select
+            aria-label="Microphone"
+            value={micDevices.activeDeviceId}
+            onChange={(e) => void micDevices.setActiveMediaDevice(e.target.value)}
+            className="h-12 max-w-[220px] truncate rounded-full border bg-secondary px-4 text-sm text-secondary-foreground focus:outline-none"
+          >
+            {micDevices.devices.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || `Microphone (${d.deviceId.slice(0, 6)})`}
+              </option>
+            ))}
+          </select>
+        )}
         <Button
           variant="destructive"
           size="lg"

@@ -1,4 +1,6 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { Env } from '../../config/env.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { RetrievalService } from '../../documents/retrieval.service.js';
 import type { FitAnalysis, InterviewPlan, JobProfile, ResumeProfile } from '../../agents/schemas.js';
@@ -28,6 +30,7 @@ export class InterviewRuntimeService {
     private readonly prisma: PrismaService,
     private readonly retrieval: RetrievalService,
     private readonly sessions: SessionsService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
 
   async context(sessionId: string): Promise<InterviewContext> {
@@ -93,6 +96,8 @@ export class InterviewRuntimeService {
 
     const turns = input.turns.filter((t) => t.content.trim());
     const candidateSpoke = turns.some((t) => t.role === 'CANDIDATE');
+    const skipAnalysis = this.config.get('SKIP_POST_CALL_ANALYSIS', { infer: true });
+    const nextStatus = !candidateSpoke ? 'READY' : skipAnalysis ? 'COMPLETED' : 'ANALYZING';
 
     await this.prisma.$transaction([
       this.prisma.transcriptTurn.deleteMany({ where: { sessionId } }),
@@ -101,15 +106,16 @@ export class InterviewRuntimeService {
       }),
       this.prisma.interviewSession.update({
         where: { id: sessionId },
-        data: candidateSpoke
-          ? { status: 'ANALYZING', endedAt: new Date() }
-          : // Nothing to grade: let the candidate start again instead of failing.
-            { status: 'READY', startedAt: null, roomName: null },
+        data:
+          nextStatus === 'READY'
+            ? // Nothing to grade: let the candidate start again instead of failing.
+              { status: 'READY', startedAt: null, roomName: null }
+            : { status: nextStatus, endedAt: new Date(), error: null },
       }),
     ]);
 
-    if (candidateSpoke) await this.sessions.enqueueAnalysis(sessionId);
+    if (nextStatus === 'ANALYZING') await this.sessions.enqueueAnalysis(sessionId);
     this.logger.log(`Session ${sessionId} ended (${input.endedReason ?? 'unknown'}), ${turns.length} turns`);
-    return { status: candidateSpoke ? 'ANALYZING' : 'READY' };
+    return { status: nextStatus };
   }
 }
