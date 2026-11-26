@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from livekit.agents import inference, llm, stt, tts, vad
+from livekit.agents import NOT_GIVEN, inference, llm, stt, tts, vad
 from livekit.plugins import deepgram, openai
 
 from .config import Settings
@@ -50,6 +50,11 @@ def build_llm(settings: Settings) -> llm.LLM:
     chain: list[llm.LLM] = []
 
     if settings.openrouter_llm_model.strip():
+        extra_body = (
+            {"reasoning": {"enabled": False}}
+            if "nemotron" in settings.openrouter_llm_model
+            else None
+        )
         seen_keys: set[str] = set()
         for raw_key in (settings.openrouter_api_key, settings.openrouter_api_key_secondary):
             key = raw_key.strip()
@@ -62,6 +67,7 @@ def build_llm(settings: Settings) -> llm.LLM:
                     api_key=key,
                     base_url=settings.openrouter_base_url,
                     max_completion_tokens=1024,
+                    extra_body=extra_body if extra_body is not None else NOT_GIVEN,
                 )
             )
 

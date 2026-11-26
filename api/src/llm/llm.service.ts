@@ -97,8 +97,11 @@ export class LlmService {
             apiKey: key.apiKey,
             model,
             temperature,
-            maxTokens: 4096,
-            maxRetries: 1,
+            maxTokens: 8192,
+            maxRetries: 0,
+            // Nemotron free models default to lengthy internal reasoning that
+            // hits token/time limits on structured JSON; disable it when supported.
+            modelKwargs: model.includes('nemotron') ? { reasoning: { enabled: false } } : undefined,
             configuration: { baseURL: this.baseURL },
           }),
         });
