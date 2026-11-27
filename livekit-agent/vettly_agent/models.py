@@ -123,7 +123,7 @@ def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
         chain.append(
             inference.STT(
                 settings.livekit_stt_fallback_model,
-                language=settings.livekit_stt_language,
+                language=settings.deepgram_stt_language,
             )
         )
 

@@ -95,9 +95,6 @@ def _tech_tokens(text: str) -> list[str]:
 
 
 _GENERIC_INTERVIEW_KEYTERMS: tuple[str, ...] = (
-    "call",
-    "end call",
-    "wrap up",
     "migrate",
     "migration",
     "deploy",

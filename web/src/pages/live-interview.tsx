@@ -9,7 +9,7 @@ import {
   useSessionMessages,
   useTrackToggle,
 } from '@livekit/components-react'
-import { Room, Track, TokenSource } from 'livekit-client'
+import { AudioPresets, Room, Track, TokenSource } from 'livekit-client'
 import { Loader2, Mic, MicOff, PhoneOff, Headphones, ArrowLeft } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
@@ -43,8 +43,10 @@ export function LiveInterviewPage() {
           noiseSuppression: true,
           autoGainControl: true,
         },
-        // Disable Opus DTX so soft speech from external mics is never gated as silence.
+        // Disable Opus DTX so soft speech from external mics is never gated as silence,
+        // and use high-quality mono Opus to preserve high-frequency consonants.
         publishDefaults: {
+          audioPreset: AudioPresets.musicHighQuality,
           dtx: false,
           red: true,
         },
@@ -68,10 +70,13 @@ export function LiveInterviewPage() {
     }
   }, [])
 
-  async function join() {
+  async function join(deviceId?: string) {
     setJoining(true)
     try {
       await session.start({ tracks: { microphone: { enabled: true } } })
+      if (deviceId) {
+        await room.switchActiveDevice('audioinput', deviceId)
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not connect. Check your microphone permissions.')
     } finally {
@@ -110,8 +115,80 @@ function PreJoin({
   title?: string
   ready: boolean
   joining: boolean
-  onJoin: () => void
+  onJoin: (deviceId?: string) => void
 }) {
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('')
+  const [level, setLevel] = useState(0)
+  const [micError, setMicError] = useState<string | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let raf = 0
+    let audioCtx: AudioContext | null = null
+
+    async function startPreview() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true,
+        })
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop())
+          return
+        }
+        streamRef.current = stream
+        setMicError(null)
+
+        const all = await navigator.mediaDevices.enumerateDevices()
+        if (!cancelled) {
+          const inputs = all.filter((d) => d.kind === 'audioinput')
+          setDevices(inputs)
+          if (!selectedDeviceId && inputs[0]?.deviceId) {
+            setSelectedDeviceId(inputs[0].deviceId)
+          }
+        }
+
+        audioCtx = new AudioContext()
+        const analyser = audioCtx.createAnalyser()
+        analyser.fftSize = 256
+        audioCtx.createMediaStreamSource(stream).connect(analyser)
+        const data = new Uint8Array(analyser.frequencyBinCount)
+
+        const tick = () => {
+          if (cancelled) return
+          analyser.getByteTimeDomainData(data)
+          let peak = 0
+          for (let i = 0; i < data.length; i++) {
+            const v = Math.abs(data[i] - 128) / 128
+            if (v > peak) peak = v
+          }
+          setLevel(Math.min(100, Math.round(peak * 220)))
+          raf = requestAnimationFrame(tick)
+        }
+        tick()
+      } catch {
+        if (!cancelled) setMicError('Microphone access is needed to check your audio level.')
+      }
+    }
+
+    void startPreview()
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+      streamRef.current?.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+      void audioCtx?.close()
+    }
+  }, [selectedDeviceId])
+
+  function handleJoin() {
+    // Release preview mic before LiveKit opens the capture track.
+    streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current = null
+    onJoin(selectedDeviceId || undefined)
+  }
+
   return (
     <div className="relative grid min-h-dvh place-items-center overflow-hidden px-4">
       <div className="pointer-events-none absolute top-1/3 left-1/2 size-[32rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/20 blur-3xl" aria-hidden />
@@ -130,7 +207,35 @@ function PreJoin({
           Headphones recommended. Your interviewer will greet you as soon as you join. Pause to think whenever you
           need; it will wait.
         </p>
-        <Button size="lg" className="mt-8 h-12 w-full text-base" disabled={!ready || joining} onClick={onJoin}>
+
+        <div className="mt-6 space-y-3 rounded-xl border bg-card/50 p-4 text-left">
+          {devices.length > 0 && (
+            <select
+              aria-label="Select microphone"
+              value={selectedDeviceId}
+              onChange={(e) => setSelectedDeviceId(e.target.value)}
+              className="h-10 w-full truncate rounded-lg border bg-secondary px-3 text-sm text-secondary-foreground focus:outline-none"
+            >
+              {devices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || `Microphone (${d.deviceId.slice(0, 6)})`}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="flex items-center gap-3">
+            <Mic className="size-4 shrink-0 text-muted-foreground" />
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted" aria-label="Microphone level">
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-75"
+                style={{ width: `${level}%` }}
+              />
+            </div>
+          </div>
+          {micError && <p className="text-xs text-destructive">{micError}</p>}
+        </div>
+
+        <Button size="lg" className="mt-6 h-12 w-full text-base" disabled={!ready || joining} onClick={handleJoin}>
           {joining ? <Loader2 className="animate-spin" /> : <Mic />}
           {ready ? (joining ? 'Connecting…' : 'Join interview') : 'Interview not ready'}
         </Button>

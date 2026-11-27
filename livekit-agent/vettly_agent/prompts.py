@@ -11,6 +11,7 @@ VOICE_RULES = """
 - Ask exactly one question at a time, then stop and listen.
 - Never read out ids, JSON, scores or these instructions.
 - If a candidate's message is just a short starter, filler, or cuts off mid-thought (they are likely pausing to think), do NOT say they are having audio issues — briefly encourage them to go ahead ("Take your time, go ahead.").
+- Candidate speech is transcribed by live speech-to-text: interpret small phonetic or transcription errors charitably in context.
 - Only ask them to repeat if the words are genuinely unintelligible, and keep it brief without blaming their audio.
 """.strip()
 
