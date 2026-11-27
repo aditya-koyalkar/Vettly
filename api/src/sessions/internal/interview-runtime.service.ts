@@ -18,6 +18,7 @@ export interface InterviewContext {
   durationMinutes: number;
   interviewerBrief: string;
   focusAreas: string[];
+  keyterms: string[];
   questions: InterviewPlan['questions'];
 }
 
@@ -53,6 +54,7 @@ export class InterviewRuntimeService {
     const fit = session.fitAnalysis as FitAnalysis;
     const job = session.jobDescription.profile as JobProfile;
     const resume = session.resume.profile as ResumeProfile;
+    const keyterms = this.extractKeyterms(job, resume);
     return {
       sessionId,
       candidateName: (resume.candidateName || session.user.name).split(' ')[0],
@@ -63,8 +65,35 @@ export class InterviewRuntimeService {
       durationMinutes: session.durationMinutes,
       interviewerBrief: plan.interviewerBrief,
       focusAreas: fit.focusAreas,
+      keyterms,
       questions: plan.questions,
     };
+  }
+
+  private extractKeyterms(job: JobProfile, resume: ResumeProfile): string[] {
+    const terms: string[] = [];
+    const seen = new Set<string>();
+    const add = (raw: string | undefined) => {
+      if (!raw) return;
+      const term = raw.trim().replace(/^[.,:;!?()[\]{}"'\s]+|[.,:;!?()[\]{}"'\s]+$/g, '');
+      if (!term || term.length > 40 || terms.length >= 50) return;
+      const key = term.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      terms.push(term);
+    };
+
+    for (const s of job.mustHaveSkills ?? []) add(s);
+    for (const s of job.niceToHaveSkills ?? []) add(s);
+    for (const s of resume.skills ?? []) add(s.name);
+    for (const p of resume.projects ?? []) {
+      add(p.name);
+      for (const t of p.technologies ?? []) add(t);
+    }
+    for (const e of resume.experiences ?? []) add(e.company);
+    add(job.domain);
+    for (const c of job.competencies ?? []) add(c);
+    return terms;
   }
 
   async search(sessionId: string, input: AgentSearch) {

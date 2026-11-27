@@ -43,19 +43,20 @@ def build_noise_cancellation(settings: Settings) -> rtc.NoiseCancellationOptions
 
 
 def build_vad() -> vad.VAD:
-    # 0.5 activation + 100ms minimum speech keeps clicks, breaths and keyboard noise from
-    # registering as speech (and from interrupting the agent). 0.45s silence ends a VAD
-    # segment; the turn detector + endpointing delay decide whether the turn is over.
+    # 0.3 activation + 50ms minimum speech picks up normal speaking volume (and
+    # AEC-ducked speech right after agent turns) without requiring the candidate
+    # to shout. prefix_padding_duration=0.6 preserves word-initial consonants.
     return inference.VAD(
-        min_speech_duration=0.1,
-        min_silence_duration=0.45,
-        prefix_padding_duration=0.5,
-        activation_threshold=0.5,
+        min_speech_duration=0.05,
+        min_silence_duration=0.35,
+        prefix_padding_duration=0.6,
+        activation_threshold=0.3,
     )
 
 
 def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
     chain: list[stt.STT] = []
+    language_hints = list(dict.fromkeys(h for h in (settings.deepgram_stt_language, "en") if h))
     flux_options: dict[str, Any] = {
         "eot_threshold": settings.deepgram_flux_eot_threshold,
         "eager_eot_threshold": settings.deepgram_flux_eager_eot_threshold,
@@ -73,6 +74,9 @@ def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
                     eot_threshold=settings.deepgram_flux_eot_threshold,
                     eager_eot_threshold=settings.deepgram_flux_eager_eot_threshold,
                     eot_timeout_ms=settings.deepgram_flux_eot_timeout_ms,
+                    language_hint=(
+                        language_hints if "multi" in settings.deepgram_stt_model else NOT_GIVEN
+                    ),
                     mip_opt_out=True,
                 )
             )
@@ -98,7 +102,11 @@ def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
 
     if settings.livekit_stt_model.strip():
         if settings.livekit_stt_model.startswith("deepgram/flux"):
-            extra_kwargs = flux_options
+            extra_kwargs = (
+                {**flux_options, "language_hint": language_hints}
+                if "multi" in settings.livekit_stt_model
+                else flux_options
+            )
         elif settings.livekit_stt_model.startswith("assemblyai/"):
             extra_kwargs = {"format_turns": True}
         else:

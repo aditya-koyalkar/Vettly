@@ -40,8 +40,7 @@ export function LiveInterviewPage() {
       new Room({
         audioCaptureDefaults: {
           echoCancellation: true,
-          // Krisp noise cancellation runs server-side; double suppression clips speech onsets.
-          noiseSuppression: false,
+          noiseSuppression: true,
           autoGainControl: true,
         },
         // Disable Opus DTX so soft speech from external mics is never gated as silence.

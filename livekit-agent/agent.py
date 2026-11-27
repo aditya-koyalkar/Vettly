@@ -94,24 +94,68 @@ def _tech_tokens(text: str) -> list[str]:
     return out
 
 
+_GENERIC_INTERVIEW_KEYTERMS: tuple[str, ...] = (
+    "call",
+    "end call",
+    "wrap up",
+    "migrate",
+    "migration",
+    "deploy",
+    "deployment",
+    "architecture",
+    "microservices",
+    "monolith",
+    "latency",
+    "throughput",
+    "scalability",
+    "database",
+    "cache",
+    "caching",
+    "API",
+    "endpoint",
+    "authentication",
+    "authorization",
+    "webhook",
+    "pipeline",
+    "trade-off",
+    "bottleneck",
+    "incident",
+    "rollback",
+    "refactor",
+    "debugging",
+    "production",
+    "staging",
+    "stakeholder",
+    "ownership",
+    "cross-functional",
+)
+
+
 def _session_keyterms(interview: InterviewContext) -> list[str]:
-    """Extract role, company, and technical terms for STT keyterm boosting."""
+    """Extract role, company, JD/resume, and generic interview terms for STT keyterm boosting."""
     terms: list[str] = []
     seen: set[str] = set()
+    word_budget = 350  # stay well under Deepgram Flux's 500-token keyterm ceiling
 
     def _add(raw_term: str) -> None:
+        nonlocal word_budget
         term = raw_term.strip(".,:;!?()[]{}\"' ")
-        if not term or len(term) > 40 or len(terms) >= 25:
+        if not term or len(term) > 40 or len(terms) >= 80:
+            return
+        words = len(term.split())
+        if words > word_budget:
             return
         key = term.lower()
         if key in _KEYTERM_STOPWORDS or key in seen:
             return
         seen.add(key)
         terms.append(term)
+        word_budget -= words
 
     direct_terms = [
         interview.jobTitle,
         interview.company,
+        *interview.keyterms,
         *interview.focusAreas,
         *(q.topic for q in interview.questions),
     ]
@@ -123,11 +167,16 @@ def _session_keyterms(interview: InterviewContext) -> list[str]:
         interview.interviewerBrief,
         *interview.focusAreas,
         *(q.question for q in interview.questions),
+        *(fu for q in interview.questions for fu in q.followUps),
+        *(ec for q in interview.questions for ec in q.evaluationCriteria),
     ]
     for text in text_sources:
         for match in _tech_tokens(text):
             for part in match.split("/"):
                 _add(part)
+
+    for generic in _GENERIC_INTERVIEW_KEYTERMS:
+        _add(generic)
 
     return terms
 
@@ -181,11 +230,12 @@ async def entrypoint(ctx: JobContext) -> None:
             # Small buffer on top of Flux's EndOfTurn so late finals don't split a turn,
             # without adding unnecessary latency to Flux's ~260ms turn detection.
             "endpointing": {"mode": "fixed", "min_delay": 0.25},
-            # Adaptive (ML) barge-in: separates real interruptions from backchannels
-            # ("mm-hm", "right"), coughs and speaker echo. Falls back to VAD on error.
+            # Responsive VAD-based barge-in: 250ms speech + >=1 word interrupts
+            # immediately without adaptive backchannel suppression blocking valid
+            # interruptions or speech right as the agent finishes.
             "interruption": {
-                "mode": "adaptive",
-                "min_duration": 0.5,
+                "mode": "vad",
+                "min_duration": 0.25,
                 "min_words": 1,
                 # If an "interruption" produces no words within 1.5s (noise, echo),
                 # treat it as false and let the agent finish its sentence.
@@ -199,9 +249,8 @@ async def entrypoint(ctx: JobContext) -> None:
             "keyterms": _session_keyterms(interview),
             "forward_chat_context": True,
         },
-        # One-shot: ignore interruptions for the first second of the greeting while the
-        # browser's echo canceller converges (0 let speaker bleed cut the agent off).
-        aec_warmup_duration=1.0,
+        # Ignore echo during the first 0.5s of the greeting while browser AEC converges.
+        aec_warmup_duration=0.5,
         max_tool_steps=4,
         user_away_timeout=35.0,
     )

@@ -32,6 +32,7 @@ class InterviewContext(BaseModel):
     durationMinutes: int
     interviewerBrief: str
     focusAreas: list[str]
+    keyterms: list[str] = []
     questions: list[PlannedQuestion]
 
 

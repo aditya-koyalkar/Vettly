@@ -19,12 +19,12 @@ class Settings(BaseSettings):
 
     # Tier 1 (STT & TTS primary): Direct Deepgram API
     deepgram_api_key: str = ""
-    deepgram_stt_model: str = "flux-general-en"
+    deepgram_stt_model: str = "flux-general-multi"
     deepgram_stt_language: str = "en-IN"
     deepgram_tts_model: str = "aura-2-asteria-en"
     # Flux turn-detection tuning (used by direct STTv2 and LiveKit Inference Flux fallback).
-    # 0.8 avoids cutting off candidate thinking pauses; 5000ms caps long silences.
-    deepgram_flux_eot_threshold: float = 0.8
+    # 0.75 balances soft turn endings with thinking pauses; 5000ms caps long silences.
+    deepgram_flux_eot_threshold: float = 0.75
     deepgram_flux_eager_eot_threshold: float = 0.5
     deepgram_flux_eot_timeout_ms: int = 5000
     # Silence (ms) before Deepgram Nova-3 finalizes a segment (unused by Flux).
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     openrouter_llm_model: str = "nvidia/nemotron-3.5-lightning:free"
 
     # LiveKit Inference (STT/TTS fallbacks after Direct Deepgram; LLM fallback after OpenRouter)
-    livekit_stt_model: str = "deepgram/flux-general-en"
+    livekit_stt_model: str = "deepgram/flux-general-multi"
     livekit_stt_language: str = "en"
     livekit_stt_fallback_model: str = "deepgram/nova-3"
     livekit_llm_model: str = "google/gemma-4-31b-it"
