@@ -1,8 +1,7 @@
 """Speech and language model chains with ordered multi-provider fallbacks.
 
-    STT: LiveKit Inference (assemblyai/assemblyai-stt-3-7-realtime-agent)
-         -> Direct Deepgram (nova-3 via STT, or flux-* via STTv2)
-         -> LiveKit Inference (deepgram/nova-3)
+    STT: Direct Deepgram (flux-general-en via STTv2, or nova-3 via STT)
+         -> LiveKit Inference (deepgram/flux-general-en -> deepgram/nova-3)
     LLM: OpenRouter primary key (nemotron-3.5-lightning:free)
          -> OpenRouter secondary key (nemotron-3.5-lightning:free)
          -> LiveKit Inference (google/gemma-4-31b-it)
@@ -11,6 +10,8 @@
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 from livekit import rtc
 from livekit.agents import NOT_GIVEN, inference, llm, stt, tts, vad
@@ -55,18 +56,12 @@ def build_vad() -> vad.VAD:
 
 def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
     chain: list[stt.STT] = []
-
-    if settings.livekit_stt_model.strip():
-        extra_kwargs = (
-            {"format_turns": True} if settings.livekit_stt_model.startswith("assemblyai/") else NOT_GIVEN
-        )
-        chain.append(
-            inference.STT(
-                settings.livekit_stt_model,
-                language=settings.livekit_stt_language,
-                extra_kwargs=extra_kwargs,
-            )
-        )
+    flux_options: dict[str, Any] = {
+        "eot_threshold": settings.deepgram_flux_eot_threshold,
+        "eager_eot_threshold": settings.deepgram_flux_eager_eot_threshold,
+        "eot_timeout_ms": settings.deepgram_flux_eot_timeout_ms,
+        "mip_opt_out": True,
+    }
 
     if settings.deepgram_api_key.strip():
         if settings.deepgram_stt_model.startswith("flux"):
@@ -75,6 +70,10 @@ def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
                     model=settings.deepgram_stt_model,
                     sample_rate=DEEPGRAM_STT_SAMPLE_RATE,
                     api_key=settings.deepgram_api_key,
+                    eot_threshold=settings.deepgram_flux_eot_threshold,
+                    eager_eot_threshold=settings.deepgram_flux_eager_eot_threshold,
+                    eot_timeout_ms=settings.deepgram_flux_eot_timeout_ms,
+                    mip_opt_out=True,
                 )
             )
         else:
@@ -97,11 +96,26 @@ def build_stt(settings: Settings, vad_model: vad.VAD) -> stt.STT:
                 )
             )
 
+    if settings.livekit_stt_model.strip():
+        if settings.livekit_stt_model.startswith("deepgram/flux"):
+            extra_kwargs = flux_options
+        elif settings.livekit_stt_model.startswith("assemblyai/"):
+            extra_kwargs = {"format_turns": True}
+        else:
+            extra_kwargs = NOT_GIVEN
+        chain.append(
+            inference.STT(
+                settings.livekit_stt_model,
+                language=settings.livekit_stt_language,
+                extra_kwargs=extra_kwargs,
+            )
+        )
+
     if settings.livekit_stt_fallback_model.strip():
         chain.append(
             inference.STT(
                 settings.livekit_stt_fallback_model,
-                language=settings.deepgram_stt_language,
+                language=settings.livekit_stt_language,
             )
         )
 

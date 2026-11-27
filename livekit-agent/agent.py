@@ -23,7 +23,6 @@ from livekit.agents import (
     UserInputTranscribedEvent,
     UserStateChangedEvent,
     cli,
-    inference,
     room_io,
     stt,
 )
@@ -177,14 +176,11 @@ async def entrypoint(ctx: JobContext) -> None:
         vad=vad,
         userdata=state,
         turn_handling={
-            # Semantic end-of-turn model: tells "I'm thinking..." pauses apart from
-            # finished answers. Cloud model with on-device fallback.
-            "turn_detection": inference.TurnDetector(),
-            # Delay after VAD end-of-speech (0.45s) before committing the turn. When the
-            # detector thinks the answer is finished we wait min_delay; when it thinks the
-            # candidate is mid-thought we wait up to max_delay, so interview "let me think"
-            # pauses aren't cut off. Dynamic mode adapts within this range per speaker.
-            "endpointing": {"mode": "dynamic", "min_delay": 1.0, "max_delay": 6.0},
+            # Delegate end-of-turn detection to Deepgram Flux's native conversational EOT model.
+            "turn_detection": "stt",
+            # Small buffer on top of Flux's EndOfTurn so late finals don't split a turn,
+            # without adding unnecessary latency to Flux's ~260ms turn detection.
+            "endpointing": {"mode": "fixed", "min_delay": 0.25},
             # Adaptive (ML) barge-in: separates real interruptions from backchannels
             # ("mm-hm", "right"), coughs and speaker echo. Falls back to VAD on error.
             "interruption": {
