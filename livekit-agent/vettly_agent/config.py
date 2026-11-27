@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     deepgram_stt_language: str = "en-IN"
     deepgram_tts_model: str = "aura-2-asteria-en"
     # Flux turn-detection tuning (used by direct STTv2 and LiveKit Inference Flux fallback).
-    # 0.75 balances soft turn endings with thinking pauses; 5000ms caps long silences.
-    deepgram_flux_eot_threshold: float = 0.75
+    # 0.85 avoids firing EndOfTurn on mid-thought pauses/fillers; 5000ms caps long silences.
+    deepgram_flux_eot_threshold: float = 0.85
     deepgram_flux_eager_eot_threshold: float = 0.5
     deepgram_flux_eot_timeout_ms: int = 5000
     # Silence (ms) before Deepgram Nova-3 finalizes a segment (unused by Flux).

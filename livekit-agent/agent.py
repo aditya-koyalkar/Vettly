@@ -224,9 +224,9 @@ async def entrypoint(ctx: JobContext) -> None:
         turn_handling={
             # Delegate end-of-turn detection to Deepgram Flux's native conversational EOT model.
             "turn_detection": "stt",
-            # Small buffer on top of Flux's EndOfTurn so late finals don't split a turn,
-            # without adding unnecessary latency to Flux's ~260ms turn detection.
-            "endpointing": {"mode": "fixed", "min_delay": 0.25},
+            # Wait 1.2s after Flux's EndOfTurn so brief thinking pauses ("uhh",
+            # "it's used for...") let the candidate continue instead of cutting in.
+            "endpointing": {"mode": "fixed", "min_delay": 1.2},
             # Responsive VAD-based barge-in: 250ms speech + >=1 word interrupts
             # immediately without adaptive backchannel suppression blocking valid
             # interruptions or speech right as the agent finishes.
