@@ -8,18 +8,23 @@ from .base import VettlyAgent
 
 
 class GreeterAgent(VettlyAgent):
-    """Opens the call: rapport, format, readiness check. Hands off to the interviewer."""
+    """Opens the call with a warm greeting and asks for the candidate's introduction."""
 
     def __init__(self, context: InterviewContext) -> None:
         super().__init__(instructions=greeter_instructions(context))
 
     async def on_enter(self) -> None:
         await self.state.publish_progress("greeting")
-        self.session.generate_reply(instructions="Greet the candidate and explain the format now.")
+        self.session.generate_reply(
+            instructions=(
+                "Greet the candidate warmly in one short sentence, say you will be taking their "
+                "interview today, and ask them to introduce themselves."
+            )
+        )
 
     @function_tool
     async def start_interview(self):
-        """Call when the candidate confirms they are ready to begin the interview."""
+        """Call right after the candidate finishes their introduction (or confirms they are ready)."""
         from .interviewer import InterviewerAgent
 
         self.state.start_clock()

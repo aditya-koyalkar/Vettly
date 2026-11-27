@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import re
 import time
 
 from livekit.agents import AgentSession, ConversationItemAddedEvent, llm
 
 from .api_client import TranscriptTurn
+
+_LANG_TAG_RE = re.compile(r"<lang:[^>]+>\s*")
 
 
 class TranscriptRecorder:
@@ -21,7 +24,7 @@ class TranscriptRecorder:
         item = event.item
         if not isinstance(item, llm.ChatMessage) or item.role not in ("user", "assistant"):
             return
-        text = (item.text_content or "").strip()
+        text = _LANG_TAG_RE.sub("", item.text_content or "").strip()
         if not text:
             return
         agent_name = None

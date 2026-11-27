@@ -93,6 +93,19 @@ export class InterviewRuntimeService {
     for (const e of resume.experiences ?? []) add(e.company);
     add(job.domain);
     for (const c of job.competencies ?? []) add(c);
+
+    // Pull technical/proper-noun tokens (e.g. LiveKit, Twilio, YAML, ADK, CI/CD) from highlights.
+    const techRe = /\b(?:[A-Z][A-Za-z0-9.+#-]{1,}|[a-z]+[A-Z][A-Za-z0-9]*)\b/g;
+    const textSources = [
+      ...(resume.experiences ?? []).flatMap((e) => e.highlights ?? []),
+      ...(resume.projects ?? []).map((p) => p.summary),
+      ...(job.responsibilities ?? []),
+    ];
+    for (const text of textSources) {
+      for (const match of text.match(techRe) ?? []) {
+        for (const part of match.split('/')) add(part);
+      }
+    }
     return terms;
   }
 

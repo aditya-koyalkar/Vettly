@@ -40,7 +40,8 @@ class InterviewerAgent(VettlyAgent):
         self.state.mark_asked()
         total = len(self.state.context.questions)
         self.session.generate_reply(
-            instructions=_question_brief(q, self.state.remaining_minutes, self.state.question_index + 1, total)
+            instructions="Briefly acknowledge the candidate's introduction in a natural phrase, then ask: "
+            + _question_brief(q, self.state.remaining_minutes, self.state.question_index + 1, total)
         )
 
     @function_tool
